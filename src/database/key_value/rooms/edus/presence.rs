@@ -23,7 +23,7 @@ impl service::rooms::edus::presence::Data for KeyValueDatabase {
 			.transpose()
 	}
 
-	fn ping_presence(&self, user_id: &UserId, new_state: PresenceState) -> Result<()> {
+	fn ping_presence(&self, user_id: &UserId, new_state: &PresenceState) -> Result<()> {
 		let now = utils::millis_since_unix_epoch();
 		let mut state_changed = false;
 
@@ -34,7 +34,7 @@ impl service::rooms::edus::presence::Data for KeyValueDatabase {
 
 			if let Some(presence_bytes) = presence_bytes {
 				let presence = Presence::from_json_bytes(&presence_bytes)?;
-				if presence.state != new_state {
+				if presence.state != *new_state {
 					state_changed = true;
 					break;
 				}
@@ -62,7 +62,7 @@ impl service::rooms::edus::presence::Data for KeyValueDatabase {
 
 					presence
 				},
-				None => Presence::new(new_state.clone(), new_state == PresenceState::Online, now, count, None),
+				None => Presence::new(new_state.clone(), *new_state == PresenceState::Online, now, count, None),
 			};
 
 			self.roomuserid_presence.insert(&key, &new_presence.to_json_bytes()?)?;

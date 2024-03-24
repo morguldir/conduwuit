@@ -82,7 +82,7 @@ impl Service {
 
 	/// Pings the presence of the given user in the given room, setting the
 	/// specified state.
-	pub fn ping_presence(&self, user_id: &UserId, new_state: PresenceState) -> Result<()> {
+	pub fn ping_presence(&self, user_id: &UserId, new_state: &PresenceState) -> Result<()> {
 		self.db.ping_presence(user_id, new_state)
 	}
 

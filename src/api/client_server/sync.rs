@@ -157,7 +157,7 @@ async fn sync_helper(
 ) -> Result<(sync_events::v3::Response, bool), Error> {
 	// Presence update
 	if services().globals.allow_local_presence() {
-		services().rooms.edus.presence.ping_presence(&sender_user, body.set_presence)?;
+		services().rooms.edus.presence.ping_presence(&sender_user, &body.set_presence)?;
 	}
 
 	// Setup watchers, so if there's no response, we can wait for them
@@ -170,8 +170,10 @@ async fn sync_helper(
 	// Load filter
 	let filter = match body.filter {
 		None => FilterDefinition::default(),
-		Some(Filter::FilterDefinition(filter)) => filter,
-		Some(Filter::FilterId(filter_id)) => services().users.get_filter(&sender_user, &filter_id)?.unwrap_or_default(),
+		Some(Filter::FilterDefinition(ref filter)) => filter.clone(),
+		Some(Filter::FilterId(ref filter_id)) => {
+			services().users.get_filter(&sender_user, filter_id)?.unwrap_or_default()
+		},
 	};
 
 	let (lazy_load_enabled, lazy_load_send_redundant) = match filter.room.state.lazy_load_options {
@@ -442,7 +444,16 @@ async fn sync_helper(
 		if duration.as_secs() > 30 {
 			duration = Duration::from_secs(30);
 		}
-		_ = tokio::time::timeout(duration, watcher).await;
+
+		if tokio::time::timeout(duration, watcher).await.is_ok() {
+			let body = body.clone();
+
+			// Recursive call
+			_ = Box::pin(async move { sync_helper(sender_user, sender_device, body).await });
+		} else {
+			return Ok((response, false));
+		}
+
 		Ok((response, false))
 	} else {
 		Ok((response, since != next_batch)) // Only cache if we made progress

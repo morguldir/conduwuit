@@ -8,7 +8,7 @@ pub trait Data: Send + Sync {
 
 	/// Pings the presence of the given user in the given room, setting the
 	/// specified state.
-	fn ping_presence(&self, user_id: &UserId, new_state: PresenceState) -> Result<()>;
+	fn ping_presence(&self, user_id: &UserId, new_state: &PresenceState) -> Result<()>;
 
 	/// Adds a presence event which will be saved until a new event replaces it.
 	fn set_presence(
