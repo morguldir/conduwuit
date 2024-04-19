@@ -197,7 +197,7 @@
         CARGO_PROFILE = profile;
       };
 
-      mkOciImage = pkgs: package: allocator:
+      mkOciImage = pkgs: package:
         pkgs.dockerTools.buildLayeredImage {
           name = package.pname;
           tag = "main";
@@ -218,6 +218,7 @@
             ];
           };
         };
+
 
         createComplementRuntime = pkgs: image: let
           complement = pkgs.fetchFromGitHub {
@@ -314,9 +315,9 @@
         default = mkPackage pkgsHost null "" "release";
         jemalloc = mkPackage pkgsHost "jemalloc" "" "release";
         hmalloc = mkPackage pkgsHost "hmalloc" "" "release";
-        oci-image = mkOciImage pkgsHost self.packages.${system}.default null;
-        oci-image-jemalloc = mkOciImage pkgsHost self.packages.${system}.default "jemalloc";
-        oci-image-hmalloc = mkOciImage pkgsHost self.packages.${system}.default "hmalloc";
+        oci-image = mkOciImage pkgsHost self.packages.${system}.default;
+        oci-image-jemalloc = mkOciImage pkgsHost self.packages.${system}.jemalloc;
+        oci-image-hmalloc = mkOciImage pkgsHost self.packages.${system}.hmalloc;
 
         book =
           let
