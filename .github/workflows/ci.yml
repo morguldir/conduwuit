@@ -98,6 +98,9 @@ jobs:
                   extra-substituters = ${{ env.ATTIC_ENDPOINT }}
                   extra-trusted-public-keys = ${{ env.ATTIC_PUBLIC_KEY }}
                   EOF
+            - name: meow
+              run: |
+                  cat /etc/nix/nix.conf
 
             - name: Prepare build environment
               run: |
