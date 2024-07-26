@@ -5,7 +5,7 @@ use std::time::Duration;
 use axum::extract::State;
 use axum_client_ip::InsecureClientIp;
 use conduit::{
-	debug_warn, err, error,
+	debug, debug_info, debug_warn, err, error, info,
 	utils::{
 		self,
 		content_disposition::{content_disposition_type, make_content_disposition, sanitise_filename},
@@ -14,7 +14,7 @@ use conduit::{
 	warn, Err, Error, Result,
 };
 use ruma::api::client::{
-	error::{ErrorKind, RetryAfter},
+	error::ErrorKind,
 	media::{
 		create_content, get_content, get_content_as_filename, get_content_thumbnail, get_media_config,
 		get_media_preview,
@@ -69,27 +69,29 @@ pub(crate) async fn get_media_preview_route(
 	let sender_user = body.sender_user.as_ref().expect("user is authenticated");
 
 	let url = &body.url;
+<<<<<<< HEAD
 	if !services.media.url_preview_allowed(url) {
 		return Err!(Request(Forbidden(
 			warn!(%sender_user, %url, "URL is not allowed to be previewed")
 		)));
+=======
+	if !url_preview_allowed(&services, url) {
+		debug_info!(%sender_user, "URL is not allowed to be previewed: {url}");
+		return Err(Error::BadRequest(ErrorKind::forbidden(), "URL is not allowed to be previewed"));
+>>>>>>> 547bc217 (reduce unnecessary logging on URL preview and event, use sensible error code for URL previews)
 	}
 
 	match services.media.get_url_preview(url).await {
 		Ok(preview) => {
 			let res = serde_json::value::to_raw_value(&preview).map_err(|e| {
-				error!(%sender_user, "Failed to convert UrlPreviewData into a serde json value: {e}");
-				Error::BadRequest(
-					ErrorKind::LimitExceeded {
-						retry_after: Some(RetryAfter::Delay(Duration::from_secs(5))),
-					},
-					"Failed to generate a URL preview, try again later.",
-				)
+				warn!(%sender_user, "Failed to convert UrlPreviewData into a serde json value: {e}");
+				err!(Request(Unknown("Failed to generate a URL preview")))
 			})?;
 
 			Ok(get_media_preview::v3::Response::from_raw_value(res))
 		},
 		Err(e) => {
+<<<<<<< HEAD
 			warn!(%sender_user, "Failed to generate a URL preview: {e}");
 			// there doesn't seem to be an agreed-upon error code in the spec.
 			// the only response codes in the preview_url spec page are 200 and 429.
@@ -99,6 +101,10 @@ pub(crate) async fn get_media_preview_route(
 				},
 				"Failed to generate a URL preview, try again later.",
 			))
+=======
+			info!(%sender_user, "Failed to generate a URL preview: {e}");
+			Err!(Request(Unknown("Failed to generate a URL preview")))
+>>>>>>> 547bc217 (reduce unnecessary logging on URL preview and event, use sensible error code for URL previews)
 		},
 	}
 }
