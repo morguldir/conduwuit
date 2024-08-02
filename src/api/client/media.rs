@@ -69,16 +69,9 @@ pub(crate) async fn get_media_preview_route(
 	let sender_user = body.sender_user.as_ref().expect("user is authenticated");
 
 	let url = &body.url;
-<<<<<<< HEAD
 	if !services.media.url_preview_allowed(url) {
-		return Err!(Request(Forbidden(
-			warn!(%sender_user, %url, "URL is not allowed to be previewed")
-		)));
-=======
-	if !url_preview_allowed(&services, url) {
 		debug_info!(%sender_user, "URL is not allowed to be previewed: {url}");
 		return Err(Error::BadRequest(ErrorKind::forbidden(), "URL is not allowed to be previewed"));
->>>>>>> 547bc217 (reduce unnecessary logging on URL preview and event, use sensible error code for URL previews)
 	}
 
 	match services.media.get_url_preview(url).await {
@@ -91,20 +84,8 @@ pub(crate) async fn get_media_preview_route(
 			Ok(get_media_preview::v3::Response::from_raw_value(res))
 		},
 		Err(e) => {
-<<<<<<< HEAD
-			warn!(%sender_user, "Failed to generate a URL preview: {e}");
-			// there doesn't seem to be an agreed-upon error code in the spec.
-			// the only response codes in the preview_url spec page are 200 and 429.
-			Err(Error::BadRequest(
-				ErrorKind::LimitExceeded {
-					retry_after: Some(RetryAfter::Delay(Duration::from_secs(5))),
-				},
-				"Failed to generate a URL preview, try again later.",
-			))
-=======
 			info!(%sender_user, "Failed to generate a URL preview: {e}");
 			Err!(Request(Unknown("Failed to generate a URL preview")))
->>>>>>> 547bc217 (reduce unnecessary logging on URL preview and event, use sensible error code for URL previews)
 		},
 	}
 }
