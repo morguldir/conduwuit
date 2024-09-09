@@ -1,0 +1,24 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 3fd372719..8fb6e6508 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -74,8 +74,8 @@ tokio-stream = "0.1.14"
+ tracing = { version = "0.1.40", default-features = false, features = ["std"] }
+ tracing-core = "0.1.32"
+ tracing-subscriber = "0.3.18"
+-uniffi = { version = "0.28.0" }
+-uniffi_bindgen = { version = "0.28.0" }
++uniffi = "0.25.3"
++uniffi_bindgen = { git = "https://github.com/mozilla/uniffi-rs", rev = "0a03b713306d6ce3de033157fc2ce92a238c2e24" }
+ url = "2.5.0"
+ vodozemac = { version = "0.7.0" }
+ wiremock = "0.6.0"
+@@ -84,7 +84,7 @@ zeroize = "1.6.0"
+ matrix-sdk = { path = "crates/matrix-sdk", version = "0.7.0", default-features = false }
+ matrix-sdk-base = { path = "crates/matrix-sdk-base", version = "0.7.0" }
+ matrix-sdk-common = { path = "crates/matrix-sdk-common", version = "0.7.0" }
+-matrix-sdk-crypto = { path = "crates/matrix-sdk-crypto", version = "0.7.0" }
++matrix-sdk-crypto = {features = ["_disable-minimum-rotation-period-ms"], path = "crates/matrix-sdk-crypto", version = "0.7.0" }
+ matrix-sdk-indexeddb = { path = "crates/matrix-sdk-indexeddb", version = "0.7.0", default-features = false }
+ matrix-sdk-qrcode = { path = "crates/matrix-sdk-qrcode", version = "0.7.0" }
+ matrix-sdk-sqlite = { path = "crates/matrix-sdk-sqlite", version = "0.7.0", default-features = false }
