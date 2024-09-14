@@ -198,11 +198,6 @@ name = "nix-default"
 group = "tests"
 script = """
 env DIRENV_DEVSHELL=dynamic \
-    CARGO_PROFILE="test" \
     direnv exec . \
-    bin/nix-build-and-cache just .#default-test
-env DIRENV_DEVSHELL=dynamic \
-    CARGO_PROFILE="test" \
-    direnv exec . \
-    nix run -L .#default-test -- --help && nix run -L .#default-test -- --version
+    nix run -L .#default -- --help && nix run -L .#default -- --version
 """

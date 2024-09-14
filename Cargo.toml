@@ -312,9 +312,9 @@ version = "0.1.2"
 
 # Used for matrix spec type definitions and helpers
 [workspace.dependencies.ruma]
-git = "https://github.com/girlbossceo/ruwuma"
+git = "https://github.com/morguldir/ruma"
 #branch = "conduwuit-changes"
-rev = "11155e576a1382783c0bcf5ad4458708777ec36e"
+rev = "d642b2da9baea10fe57ffdb0182a6dcd0a5f42b9"
 features = [
     "compat",
     "rand",

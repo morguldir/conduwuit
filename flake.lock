@@ -96,6 +96,23 @@
         "type": "github"
       }
     },
+    "complement-crypto": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1725355395,
+        "narHash": "sha256-GcaVwypH3iXCGsHa4/mPuuuPWJNGX9zIq5rtvuDCNTo=",
+        "owner": "matrix-org",
+        "repo": "complement-crypto",
+        "rev": "7da7422acaff95ad386ba6879f08dee185b37f20",
+        "type": "github"
+      },
+      "original": {
+        "owner": "matrix-org",
+        "ref": "7da7422acaff95ad386ba6879f08dee185b37f20",
+        "repo": "complement-crypto",
+        "type": "github"
+      }
+    },
     "crane": {
       "inputs": {
         "nixpkgs": [
@@ -426,6 +443,40 @@
         "type": "github"
       }
     },
+    "matrix-js-sdk": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1725883598,
+        "narHash": "sha256-g2KGgKmGSCZfxaY5swOPcMicIbJYIRMa1VVONjkkI+w=",
+        "owner": "matrix-org",
+        "repo": "matrix-js-sdk",
+        "rev": "e8128d34a1bfc38ee40d6c9b43d98b5e075d8614",
+        "type": "github"
+      },
+      "original": {
+        "owner": "matrix-org",
+        "ref": "develop",
+        "repo": "matrix-js-sdk",
+        "type": "github"
+      }
+    },
+    "matrix-rust-sdk": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1725920035,
+        "narHash": "sha256-Ytt3FCGs6jmbgzlAQOLsDNhxS3eJgAeMVKKatX17hok=",
+        "owner": "morguldir",
+        "repo": "matrix-rust-sdk",
+        "rev": "7f18672b207ee864702f0d4b5e0fad14fcf4d301",
+        "type": "github"
+      },
+      "original": {
+        "owner": "morguldir",
+        "ref": "main",
+        "repo": "matrix-rust-sdk",
+        "type": "github"
+      }
+    },
     "nix": {
       "inputs": {
         "flake-compat": "flake-compat_2",
@@ -699,14 +750,18 @@
         "attic": "attic",
         "cachix": "cachix",
         "complement": "complement",
+        "complement-crypto": "complement-crypto",
         "crane": "crane_2",
         "fenix": "fenix",
         "flake-compat": "flake-compat_4",
         "flake-utils": "flake-utils_3",
         "liburing": "liburing",
+        "matrix-js-sdk": "matrix-js-sdk",
+        "matrix-rust-sdk": "matrix-rust-sdk",
         "nix-filter": "nix-filter",
         "nixpkgs": "nixpkgs_4",
-        "rocksdb": "rocksdb"
+        "rocksdb": "rocksdb",
+        "uniffi-bindgen-go": "uniffi-bindgen-go"
       }
     },
     "rust-analyzer-src": {
@@ -769,6 +824,25 @@
         "owner": "nix-systems",
         "repo": "default",
         "type": "github"
+      }
+    },
+    "uniffi-bindgen-go": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1725927410,
+        "narHash": "sha256-jk6RUeTjNkrijms3Ao+doGin8t2P4ahcyP5LwYSbbYU=",
+        "ref": "main",
+        "rev": "09bf6e29ec0d15b7a7127b805fa4e07a4a86e1b9",
+        "revCount": 22,
+        "submodules": true,
+        "type": "git",
+        "url": "https://github.com/morguldir/uniffi-bindgen-go"
+      },
+      "original": {
+        "ref": "main",
+        "submodules": true,
+        "type": "git",
+        "url": "https://github.com/morguldir/uniffi-bindgen-go"
       }
     }
   },

@@ -3,6 +3,10 @@
     attic.url = "github:zhaofengli/attic?ref=main";
     cachix.url = "github:cachix/cachix?ref=master";
     complement = { url = "github:matrix-org/complement?ref=main"; flake = false; };
+    complement-crypto = { url = "github:matrix-org/complement-crypto?ref=7da7422acaff95ad386ba6879f08dee185b37f20"; flake = false; };
+    matrix-js-sdk = { url = "github:matrix-org/matrix-js-sdk?ref=develop"; flake = false; };
+    matrix-rust-sdk = { url = "github:morguldir/matrix-rust-sdk?ref=main"; flake = false; };
+    uniffi-bindgen-go = { url = "git+https://github.com/morguldir/uniffi-bindgen-go?ref=main&submodules=1"; flake = false; };
     crane = { url = "github:ipetkov/crane?ref=master"; };
     fenix = { url = "github:nix-community/fenix?ref=main"; inputs.nixpkgs.follows = "nixpkgs"; };
     flake-compat = { url = "github:edolstra/flake-compat?ref=master"; flake = false; };
@@ -16,6 +20,10 @@
   outputs = inputs:
     inputs.flake-utils.lib.eachDefaultSystem (system:
     let
+      matrix-js-sdk = pkgsHost.mkYarnPackage {
+        name = "matrix-js-sdk";
+        src = "${inputs.matrix-js-sdk}";
+      };
       pkgsHost = import inputs.nixpkgs{
         inherit system;
         config.permittedInsecurePackages = [ "olm-3.2.16" ];
@@ -45,18 +53,18 @@
           src = inputs.liburing;
         };
         rocksdb = (pkgs.rocksdb.override {
-          liburing = self.liburing;
-        }).overrideAttrs (old: {
-          src = inputs.rocksdb;
-          version = pkgs.lib.removePrefix
+            liburing = self.liburing;
+          }).overrideAttrs (old: {
+            src = inputs.rocksdb;
+            version = pkgs.lib.removePrefix
             "v"
             (builtins.fromJSON (builtins.readFile ./flake.lock))
               .nodes.rocksdb.original.ref;
           # we have this already at https://github.com/girlbossceo/rocksdb/commit/a935c0273e1ba44eacf88ce3685a9b9831486155
           # unsetting this so i don't have to revert it and make this nix exclusive
-          patches = [];
-          cmakeFlags = pkgs.lib.subtractLists
-            [
+              patches = [];
+              cmakeFlags = pkgs.lib.subtractLists
+              [
               # no real reason to have snappy, no one uses this
               "-DWITH_SNAPPY=1"
               # we dont need to use ldb or sst_dump (core_tools)
@@ -84,10 +92,95 @@
           # preInstall hooks has stuff for messing with ldb/sst_dump which we dont need or use
           preInstall = "";
         });
+        matrix-js-sdk = pkgs.stdenv.mkDerivation {
+          pname = "matrix-js-sdk";
+          version = inputs.matrix-js-sdk.shortRev +"!!";
+          src = inputs.complement-crypto + "/internal/api/js/js-sdk";
+
+          yarnOfflineCache = pkgsHost.fetchYarnDeps {
+            yarnLock = inputs.complement-crypto + "/internal/api/js/js-sdk/yarn.lock";
+            hash = "sha256-uvtSDA9OKyilTH7+E+w4pB3q1wpl2NKzuQgjpnn6wsc=";
+          };
+          nativeBuildInputs = [
+            pkgsHost.yarnConfigHook
+            pkgsHost.yarnBuildHook
+            pkgsHost.yarnInstallHook
+            pkgsHost.nodejs
+          ];
+
+          dontYarnInstall = true;
+          installPhase = ''
+            echo $src
+            cp -r dist $out
+          '';
+        };
+
+        matrix-rust-sdk = self.craneLib.buildPackage {
+          doCheck = false;
+          cargoTestCommand = "cargo test -p matrix-sdk-ffi";
+          cargoBuildCommand = "cargo build -p matrix-sdk-ffi";
+          cargoExtraArgs = "--locked -p matrix-sdk-ffi";
+          pname = "matrix-rust-sdk";
+          src = inputs.matrix-rust-sdk;
+          version = inputs.matrix-rust-sdk.rev;
+          buildInputs = [ pkgsHost.git pkgs.openssl pkgs.pkg-config ];
+          installPhaseCommand = ''
+            installFromCargoBuildLog "$out" "$cargoBuildLog"
+
+            mkdir $out/meow
+            cp -r $PWD/. $out/meow
+          '';
+        };
+        uniffi-bindgen-go = self.craneLib.buildPackage {
+          doCheck = false;
+          cargoTestCommand = "";
+          pname = "uniffi-bindgen-go";
+          src = inputs.uniffi-bindgen-go;
+          version = inputs.uniffi-bindgen-go.shortRev;
+          doNotRemoveReferencesToVendorDir = true;
+          installPhaseCommand = ''
+            installFromCargoBuildLog "$out" "$cargoBuildLog"
+
+            cp -r $PWD $out
+          '';
+        };
+        meow = self.craneLib.vendorCargoDeps { cargoLock = "${inputs.matrix-rust-sdk}/Cargo.lock"; };
+        complement-crypto = pkgs.stdenv.mkDerivation {
+          pname = "complement-crypto";
+          version = inputs.complement-crypto.shortRev;
+          src = inputs.complement-crypto;
+          buildInputs = [ toolchain pkgsHost.go pkgs.git ];
+
+          installPhase = ''
+            mkdir -p $out/internal/api/js/chrome/dist
+            ls -lah $out
+            cp --no-preserve=mode -r ${inputs.complement-crypto}/. $out
+            find $out -name '*.go'| xargs sed -i 's:\./logs:/tmp:g'
+            # js-sdk
+            rm -r $out/internal/api/js/chrome/dist || true
+            ls -lah $out/internal/api/js/chrome/
+            mkdir -p $out/internal/api/js/chrome/dist
+            cp -r ${self.matrix-js-sdk}/. $out/internal/api/js/chrome/dist
+
+            # rust-sdk
+            export CARGO_HOME=${self.meow}
+            export GOPATH=${self.meow}
+            export GOCACHE=$PWD/meow
+            mkdir meow
+            sed -i 's:"\./rust_storage/":"/tmp/rust_storage/":' $out/internal/api/rust/rust.go
+            sed -i 's:"rust_storage/":"/tmp/rust_storage/":' $out/internal/api/rust/rust.go
+            cp --no-preserve=mode -r ${inputs.matrix-rust-sdk}/. meow
+            cd meow
+            ${self.uniffi-bindgen-go}/bin/uniffi-bindgen-go --version
+            ${self.uniffi-bindgen-go}/bin/uniffi-bindgen-go -o $out/internal/api/rust --config $out/uniffi.toml --library ${self.matrix-rust-sdk}/lib/libmatrix_sdk_ffi.a
+            sed -i.bak 's^// #include <matrix_sdk_ffi.h>^// #include <matrix_sdk_ffi.h>\n// #cgo LDFLAGS: -lmatrix_sdk_ffi^' $out/internal/api/rust/matrix_sdk_ffi/matrix_sdk_ffi.go
+          '';
+        };
       });
 
       scopeHost = mkScope pkgsHost;
       scopeHostStatic = mkScope pkgsHostStatic;
+
 
       mkDevShell = scope: scope.pkgs.mkShell {
         env = scope.main.env // {
@@ -131,6 +224,11 @@
 
           # Needed for Complement
           go
+          gotestfmt
+          openssl
+          pkg-config
+
+          yarn
 
           # Needed for our script for Complement
           jq
@@ -226,6 +324,8 @@
 
         book = scopeHost.book;
 
+        matrix-rust-sdk = scopeHost.matrix-rust-sdk;
+        complement-crypto = scopeHost.complement-crypto;
         complement = scopeHost.complement;
         static-complement = scopeHostStatic.complement;
       }

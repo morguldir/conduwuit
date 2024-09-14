@@ -59,10 +59,11 @@ env:
 permissions:
     packages: write
     contents: read
+    actions: write
 
 jobs:
-    tests:
-        name: Test
+    build:
+        name: Build
         runs-on: ubuntu-latest
         env:
           CARGO_PROFILE: "test"
@@ -85,7 +86,23 @@ jobs:
                     exit 1
                   fi
 
-            - uses: nixbuild/nix-quick-install-action@v28
+            #- uses: nixbuild/nix-quick-install-action@v28
+            - name: Change nix store perms
+              run: |
+                sudo mkdir -p /nix/store
+                sudo chmod -R 777 /nix
+
+            - name: Restore and cache Nix store
+              uses: nix-community/cache-nix-action/restore@v5.1.0
+              with:
+                # restore and save a cache using this key
+                primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/.lock') }}
+                # if there's no cache hit, restore a cache by this prefix
+                restore-prefixes-all-matches: nix-${{ runner.os }}-
+                # collect garbage until Nix store size (in bytes) is at most this number
+                # before trying to save a new cache
+
+            - uses: cachix/install-nix-action@v27
 
             - name: Enable Cachix binary cache
               run: |
@@ -93,31 +110,10 @@ jobs:
                   cachix use crane
                   cachix use nix-community
 
-            - name: Restore and cache Nix store
-              uses: nix-community/cache-nix-action@v5.1.0
-              with:
-                # restore and save a cache using this key
-                primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/.lock') }}
-                # if there's no cache hit, restore a cache by this prefix
-                restore-prefixes-first-match: nix-${{ runner.os }}-
-                # collect garbage until Nix store size (in bytes) is at most this number
-                # before trying to save a new cache
-                gc-max-store-size-linux: 2073741824
-                # do purge caches
-                purge: true
-                # purge all versions of the cache
-                purge-prefixes: nix-${{ runner.os }}-
-                # created more than this number of seconds ago relative to the start of the `Post Restore` phase
-                purge-last-accessed: 86400
-                # except the version with the `primary-key`, if it exists
-                purge-primary-key: never
-                # always save the cache
-                save-always: true
-
             - name: Apply Nix binary cache configuration
               run: |
                   sudo tee -a "${XDG_CONFIG_HOME:-$HOME/.config}/nix/nix.conf" > /dev/null <<EOF
-                  extra-substituters = https://attic.kennel.juneis.dog/conduit https://attic.kennel.juneis.dog/conduwuit https://cache.lix.systems https://conduwuit.cachix.org
+                  extra-substituters = https://conduwuit.cachix.org https://attic.kennel.juneis.dog/conduwuit https://cache.lix.systems
                   extra-trusted-public-keys = conduit:eEKoUwlQGDdYmAI/Q/0slVlegqh/QmAvQd7HBSm21Wk= conduwuit:BbycGUgTISsltcmH0qNjFR9dbrQNYgdIAcmViSGoVTE= cache.lix.systems:aBnZUw8zA7H35Cz2RyKFVs3H4PlGTLawyY5KRbvJR8o= conduwuit.cachix.org-1:MFRm6jcnfTf0jSAbmvLfhO3KBMt4px+1xaereWXp8Xg=
                   EOF
 
@@ -129,35 +125,34 @@ jobs:
                   extra-trusted-public-keys = ${{ env.ATTIC_PUBLIC_KEY }}
                   EOF
 
+            - name: Nom
+              if: ${{ env.ACT }}
+              run: |
+                  nix profile install nixpkgs#nix-output-monitor
+                  sudo ln -s $(which nom) /usr/bin/nom-nix
+
             - name: Prepare build environment
               run: |
+                  if ! type nom &> /dev/null; then
+                    sudo ln -s $(which nix) /usr/bin/nom-nix
+                  fi
                   echo 'source $HOME/.nix-profile/share/nix-direnv/direnvrc' > "$HOME/.direnvrc"
                   nix profile install --impure --inputs-from . nixpkgs#direnv nixpkgs#nix-direnv
                   direnv allow
-                  nix develop .#all-features --command true --impure
+                  nom-nix develop .#all-features --command true
+                  nix profile list
 
             - name: Cache CI dependencies
               run: |
                   bin/nix-build-and-cache ci
 
-            # use sccache for Rust
-            - name: Run sccache-cache
-              if: (github.event.pull_request.draft != true) && (vars.DOCKER_USERNAME != '') && (vars.GITLAB_USERNAME != '') && (vars.SCCACHE_ENDPOINT != '') && (github.event.pull_request.user.login != 'renovate[bot]')
-              uses: mozilla-actions/sccache-action@main
-
-            # use rust-cache
-            - uses: Swatinem/rust-cache@v2
-              with:
-                cache-all-crates: "true"
-
-            - name: Run CI tests
+            - name: Build dynamic image for testing jemalloc
               run: |
-                  direnv exec . engage > >(tee -a test_output.log)
+                env DIRENV_DEVSHELL=dynamic direnv exec . bin/nix-build-and-cache just .#default
 
-            - name: Run Complement tests
+            - name: Build complement image
               run: |
-                  # the nix devshell sets $COMPLEMENT_SRC, so "/dev/null" is no-op
-                  direnv exec . bin/complement "/dev/null" complement_test_logs.jsonl complement_test_results.jsonl > >(tee -a test_output.log)
+                  bin/nix-build-and-cache just .#static-complement
                   cp -v -f result complement_oci_image.tar.gz
 
             - name: Upload Complement OCI image
@@ -167,38 +162,33 @@ jobs:
                 path: complement_oci_image.tar.gz
                 if-no-files-found: error
 
-            - name: Upload Complement logs
-              uses: actions/upload-artifact@v4
-              with:
-                name: complement_test_logs.jsonl
-                path: complement_test_logs.jsonl
-                if-no-files-found: error
-
-            - name: Upload Complement results
-              uses: actions/upload-artifact@v4
-              with:
-                name: complement_test_results.jsonl
-                path: complement_test_results.jsonl
-                if-no-files-found: error
-
-            - name: Diff Complement results with checked-in repo results
+            - name: Nix Optimise
               run: |
-                  diff -u --color=always tests/test_results/complement/test_results.jsonl complement_test_results.jsonl > >(tee -a complement_diff_output.log)
+                nix store optimise --quiet
 
+            - name: Save CI Cache
+              if: always()
+              uses: nix-community/cache-nix-action/save@v5.1.0
+              with:
+                primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/.lock') }}
+                # Store a larger cache for the main branch
+                gc-max-store-size: ${{ github.ref == 'refs/heads/main' && 2073741824 || 100000000 }}
+                # purge caches if build was successful
+                purge: success()
+                # purge all versions of the cache
+                purge-prefixes: nix-${{ runner.os }}-
+                # created more than this number of seconds ago relative to the start of the `Post Restore` phase
+                purge-last-accessed: 0
             - name: Update Job Summary
               if: success() || failure()
               run: |
                   if [ ${{ job.status }} == 'success' ]; then
                       echo '# ✅ completed suwuccessfully' >> $GITHUB_STEP_SUMMARY
+                      tail -n 100 complement_crypto_test_results.jsonl | sed 's/\x1b\[[0-9;]*m//g' >> $GITHUB_STEP_SUMMARY
                   else
                       echo '# CI failure' >> $GITHUB_STEP_SUMMARY
                       echo '```' >> $GITHUB_STEP_SUMMARY
                       tail -n 40 test_output.log | sed 's/\x1b\[[0-9;]*m//g' >> $GITHUB_STEP_SUMMARY
-                      echo '```' >> $GITHUB_STEP_SUMMARY
-
-                      echo '# Complement diff results' >> $GITHUB_STEP_SUMMARY
-                      echo '```diff' >> $GITHUB_STEP_SUMMARY
-                      tail -n 100 complement_diff_output.log | sed 's/\x1b\[[0-9;]*m//g' >>     $GITHUB_STEP_SUMMARY
                       echo '```' >> $GITHUB_STEP_SUMMARY
                   fi
 
@@ -206,10 +196,92 @@ jobs:
               run: |
                   cargo clean --profile test
 
-    build:
-        name: Build
+    tests:
+      name: Tests
+      runs-on: ubuntu-latest
+      needs: build
+      steps:
+        - uses: nix-community/cache-nix-action/restore@v5.1.0
+          with:
+            # restore and save a cache using this key
+            primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/.lock') }}
+            fail-on: primary-key.not-restored
+
+        - name: Run CI tests
+          run: |
+            nix profile install --inputs-from . nixpkgs#direnv nixpkgs#nix-direnv
+            direnv exec . engage > >(tee -a test_output.log)
+
+    complement:
+      name: Complement
+      runs-on: ubuntu-latest
+      needs: build
+      steps:
+        - uses: nix-community/cache-nix-action/restore@v5.1.0
+          with:
+            # restore and save a cache using this key
+            primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/.lock') }}
+            fail-on: primary-key.not-restored
+
+        - name: Run Complement tests
+          run: |
+            # the nix devshell sets $COMPLEMENT_SRC, so "/dev/null" is no-op
+            nix profile install --inputs-from . nixpkgs#direnv nixpkgs#nix-direnv
+            direnv exec . bin/complement "/dev/null" complement_test_logs.jsonl complement_test_results.jsonl > >(tee -a test_output.log)
+
+        - name: Upload Complement logs
+          uses: actions/upload-artifact@v4
+          with:
+            name: complement_crypto_test_logs.jsonl
+            path: complement_crypto_test_logs.jsonl
+            if-no-files-found: error
+
+        - name: Upload Complement results
+          uses: actions/upload-artifact@v4
+          with:
+            name: complement_crypto_test_results.jsonl
+            path: complement_crypto_test_results.jsonl
+            if-no-files-found: error
+
+        - name: Diff Complement results with checked-in repo results
+          run: |
+            diff -u --color=always tests/test_results/complement/test_results.jsonl complement_test_results.jsonl > >(tee -a complement_diff_output.log)
+
+        - name: Update Job Summary
+          if: success() || failure()
+          run: |
+            if [ ${{ job.status != 'success' }} ]; then
+              echo '# Complement diff results' >> $GITHUB_STEP_SUMMARY
+              echo '```diff' >> $GITHUB_STEP_SUMMARY
+              tail -n 100 complement_diff_output.log | sed 's/\x1b\[[0-9;]*m//g' >>     $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+
+    complement-crypto:
+      name: Complement Crypto
+      runs-on: ubuntu-latest
+      needs: build
+      steps:
+        - uses: nix-community/cache-nix-action/restore@v5.1.0
+          with:
+            # restore and save a cache using this key
+            primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/.lock') }}
+            fail-on: primary-key.not-restored
+
+        - name: Run Complement Crypto tests
+          run: |
+              nix profile install --inputs-from . nixpkgs#direnv nixpkgs#nix-direnv
+              bin/nix-build-and-cache just .#complement-crypto
+              bin/nix-build-and-cache just .#matrix-rust-sdk
+              export COMPLEMENT_CRYPTO_SRC=$(nix eval .#complement-crypto.outPath)
+              export RUST_SDK_DIR=$(nix eval .#matrix-rust-sdk.outPath)
+              env DIRENV_DEVSHELL=dynamic direnv exec . bin/complement-crypto $COMPLEMENT_CRYPTO_SRC complement_crypto_test_logs.jsonl complement_crypto_test_results.jsonl > >(tee -a test_output.log)
+
+
+    artifacts:
+        name: Generate Artifacts
         runs-on: ubuntu-latest
-        needs: tests
+        needs: [tests, complement, complement-crypto]
         strategy:
             matrix:
                 include:
@@ -222,7 +294,9 @@ jobs:
             - name: Sync repository
               uses: actions/checkout@v4
 
-            - uses: nixbuild/nix-quick-install-action@v28
+
+            - uses: cachix/install-nix-action@v27
+            #- uses: nixbuild/nix-quick-install-action@v28
 
             - name: Enable Cachix binary cache
               run: |
@@ -277,11 +351,6 @@ jobs:
             - name: Run sccache-cache
               if: (github.event.pull_request.draft != true) && (vars.DOCKER_USERNAME != '') && (vars.GITLAB_USERNAME != '') && (vars.SCCACHE_ENDPOINT != '') && (github.event.pull_request.user.login != 'renovate[bot]')
               uses: mozilla-actions/sccache-action@main
-
-            # use rust-cache
-            - uses: Swatinem/rust-cache@v2
-              with:
-                cache-all-crates: "true"
 
             - name: Build static ${{ matrix.target }}
               run: |
@@ -404,7 +473,7 @@ jobs:
     docker:
         name: Docker publish
         runs-on: ubuntu-latest
-        needs: build
+        needs: artifacts
         if: (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || (github.event.pull_request.draft != true)) && (vars.DOCKER_USERNAME != '') && (vars.GITLAB_USERNAME != '') && github.event.pull_request.user.login != 'renovate[bot]'
         env:
             DOCKER_ARM64: docker.io/${{ github.repository }}:${{ (github.head_ref != '' && format('merge-{0}-{1}', github.event.number, github.event.pull_request.user.login)) || github.ref_name }}-${{ github.sha }}-arm64v8
@@ -549,3 +618,5 @@ jobs:
                   echo "- \`docker pull ${{ env.DOCKER_TAG }}-debug\`" >> $GITHUB_STEP_SUMMARY
                   echo "- \`docker pull ${{ env.GHCR_TAG }}-debug\`" >> $GITHUB_STEP_SUMMARY
                   echo "- \`docker pull ${{ env.GLCR_TAG }}-debug\`" >> $GITHUB_STEP_SUMMARY
+
+# vim: ts=2:sw=2:expandtab

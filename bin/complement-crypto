@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Path to Complement's source code
+#
+# The `COMPLEMENT_SRC` environment variable is set in the Nix dev shell, which
+# points to a store path containing the Complement source code. It's likely you
+# want to just pass that as the first argument to use it here.
+COMPLEMENT_CRYPTO_SRC="${COMPLEMENT_CRYPTO_SRC:-$1}"
+
+#"$COMPLEMENT_CRYPTO_SRC"/rebuild_rust_sdk.sh https://github.com/matrix-org/matrix-rust-sdk@main
+#pushd "$COMPLEMENT_CRYPTO_SRC" > /dev/null
+#./rebuild_js_sdk.sh matrix-js-sdk@https://github.com/matrix-org/matrix-js-sdk#develop
+#Popd > /dev/null
+
+# A `.jsonl` file to write test logs to
+LOG_FILE="$2"
+
+# A `.jsonl` file to write test results to
+RESULTS_FILE="$3"
+
+TEST_MATRIX="rR,jr,rJ,jJ"
+OCI_IMAGE="complement-conduit:main"
+
+# Complement tests that are skipped due to flakiness/reliability issues
+
+# $COMPLEMENT_SRC needs to be a directory to Complement source code
+if [ -f "$COMPLEMENT_CRYPTO_SRC" ]; then
+    echo "\$COMPLEMENT_CRYPTO_SRC must be a directory/path to complement-crypto source code"
+    exit 1
+fi
+
+# quick test to make sure we can actually write to $LOG_FILE and $RESULTS_FILE
+touch $LOG_FILE && rm -v $LOG_FILE
+touch $RESULTS_FILE && rm -v $RESULTS_FILE
+
+toplevel="$(git rev-parse --show-toplevel)"
+
+pushd "$toplevel" > /dev/null
+
+bin/nix-build-and-cache just .#static-complement
+
+docker load < result
+popd > /dev/null
+
+export LD_LIBRARY_PATH=$RUST_SDK_DIR/lib
+export LIBRARY_PATH=$RUST_SDK_DIR/lib
+# It's okay (likely, even) that `go test` exits nonzero
+set +o pipefail
+env \
+    -C "$COMPLEMENT_CRYPTO_SRC" \
+    LIBRARY_PATH=$RUST_SDK_DIR/lib \
+    LD_LIBRARY_PATH=$RUST_SDK_DIR/lib \
+    COMPLEMENT_CRYPTO_TEST_CLIENT_MATRIX="$TEST_MATRIX" \
+    COMPLEMENT_BASE_IMAGE="$OCI_IMAGE" \
+    go test -v -timeout 1h -tags=rust,jssdk -json ./tests | tee "$LOG_FILE"
+set -o pipefail
+
+# Post-process the results into an easy-to-compare format, sorted by Test name for reproducible results
+cat "$LOG_FILE" | jq -s -c 'sort_by(.Test)[]' | jq -c '
+    select(
+        (.Action == "pass" or .Action == "fail" or .Action == "skip")
+        and .Test != null
+    ) | {Action: .Action, Test: .Test}
+    ' > "$RESULTS_FILE"
