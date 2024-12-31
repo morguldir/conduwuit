@@ -33,6 +33,7 @@ use ruma::{
 		GlobalAccountDataEventType, StateEventType, TimelineEventType,
 	},
 	push::{Action, Ruleset, Tweak},
+	signatures::Verified,
 	state_res::{self, Event, RoomVersion},
 	uint, user_id, CanonicalJsonObject, CanonicalJsonValue, EventId, OwnedEventId, OwnedRoomId,
 	OwnedServerName, OwnedUserId, RoomId, RoomVersionId, ServerName, UserId,
@@ -864,6 +865,43 @@ impl Service {
 		let (pdu, pdu_json) = self
 			.create_hash_and_sign_event(pdu_builder, sender, room_id, state_lock)
 			.await?;
+
+		let room_version_id = self
+			.services
+			.state
+			.get_room_version(room_id)
+			.await
+			.or_else(|_| {
+				if pdu.kind == TimelineEventType::RoomCreate {
+					let content: RoomCreateEventContent =
+						serde_json::from_str(pdu.content().get())?;
+					Ok(content.room_version)
+				} else {
+					Err(Error::InconsistentRoomState(
+						"non-create event for room of unknown version",
+						room_id.to_owned(),
+					))
+				}
+			})?;
+
+		let mut test = pdu_json.clone();
+		if !matches!(&room_version_id, RoomVersionId::V1 | RoomVersionId::V2) {
+			test.remove("event_id");
+		}
+		match self
+			.services
+			.server_keys
+			.verify_event(&test, Some(&room_version_id))
+			.await
+		{
+			| Ok(Verified::All) => Ok(()),
+			| Ok(Verified::Signatures) =>
+				Err!(Request(Forbidden(warn!("Invalid content signature")))),
+			| Err(e) => Err!(Request(Forbidden(warn!(
+				"Failed to create event due to invalid signature: {}",
+				e
+			)))),
+		}?;
 
 		if self.services.admin.is_admin_room(&pdu.room_id).await {
 			self.check_pdu_for_admin_room(&pdu, sender).boxed().await?;
