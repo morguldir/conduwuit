@@ -85,6 +85,13 @@ pub(crate) async fn create_join_event_template_route(
 		if matches!(room_version_id, V1 | V2 | V3 | V4 | V5 | V6 | V7) {
 			// room version does not support restricted join rules
 			None
+		} else if services
+			.rooms
+			.state_cache
+			.is_invited(&body.user_id, &body.room_id)
+			.await
+		{
+			None
 		} else if user_can_perform_restricted_join(
 			&services,
 			&body.user_id,
